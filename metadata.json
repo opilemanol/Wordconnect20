@@ -1,0 +1,6 @@
+{
+  "name": "Word Connect",
+  "description": "A fun word connection game with ads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
