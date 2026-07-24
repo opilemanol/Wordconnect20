@@ -14,15 +14,15 @@ defaultConfig {
     applicationId = "com.aistudio.wordconnectgame.qwpzre"
    minSdk = 24
 targetSdk = 36
-    versionCode = 3
-    versionName = "3.0"
+    versionCode = 1
+    versionName = "1.0"
 testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 }
 
 signingConfigs {
     create("release") {
         // Look for the environment variable, default to local root directory if empty
-        val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-keybeesharp.jks"
+        val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-wordconnect.jks"
         storeFile = file(keystorePath)
         
         // This handles both GitHub environment variables and local properties gracefully
