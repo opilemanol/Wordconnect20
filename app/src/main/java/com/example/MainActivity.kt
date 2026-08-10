@@ -1,8 +1,17 @@
 package com.example
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.net.Uri
+import android.view.View
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import android.os.Bundle
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,6 +27,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -544,12 +554,71 @@ fun WordConnectGameApp(
         mutableStateOf(sharedPrefs.getString("profile_${activeProfileId}_ads_watched_date", "") ?: "") 
     }
     
+    // --- DAILY STREAK STATE & LOGIC ---
+    var streakCount by rememberSaveable(activeProfileId) { 
+        mutableStateOf(sharedPrefs.getInt("profile_${activeProfileId}_streak_count", 1)) 
+    }
+    var lastStreakDate by rememberSaveable(activeProfileId) { 
+        mutableStateOf(sharedPrefs.getString("profile_${activeProfileId}_last_streak_date", "") ?: "") 
+    }
+    var dailyClaimedDate by rememberSaveable(activeProfileId) { 
+        mutableStateOf(sharedPrefs.getString("profile_${activeProfileId}_daily_claimed_date", "") ?: "") 
+    }
+    var showDailyStreakDialog by rememberSaveable { mutableStateOf(false) }
+
     val currentDateString = remember {
         try {
             java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         } catch (e: Exception) {
             ""
         }
+    }
+
+    val yesterdayDateString = remember {
+        try {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(System.currentTimeMillis() - 86400000L))
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    LaunchedEffect(activeProfileId, currentDateString) {
+        if (lastStreakDate.isNotEmpty() && lastStreakDate != currentDateString && lastStreakDate != yesterdayDateString) {
+            streakCount = 1
+            sharedPrefs.edit().putInt("profile_${activeProfileId}_streak_count", 1).apply()
+        }
+    }
+
+    val isDailyRewardClaimedToday = (dailyClaimedDate == currentDateString)
+
+    val claimDailyReward = {
+        val rewardDay = ((streakCount - 1) % 7) + 1
+        val rewardAmount = when (rewardDay) {
+            1 -> 100
+            2 -> 150
+            3 -> 200
+            4 -> 250
+            5 -> 300
+            6 -> 400
+            7 -> 1000
+            else -> 100
+        }
+        
+        val newStreak = if (lastStreakDate == yesterdayDateString || lastStreakDate.isEmpty()) streakCount + 1 else if (lastStreakDate == currentDateString) streakCount else 1
+        streakCount = newStreak
+        lastStreakDate = currentDateString
+        dailyClaimedDate = currentDateString
+        coins += rewardAmount
+        
+        sharedPrefs.edit().apply {
+            putInt("profile_${activeProfileId}_streak_count", newStreak)
+            putString("profile_${activeProfileId}_last_streak_date", currentDateString)
+            putString("profile_${activeProfileId}_daily_claimed_date", currentDateString)
+            putInt("profile_${activeProfileId}_coins", coins)
+            apply()
+        }
+        
+        showToast("🎁 Day $rewardDay Daily Reward Claimed! +$rewardAmount Coins!")
     }
     
     var currentTimeMillis by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -560,11 +629,9 @@ fun WordConnectGameApp(
         }
     }
 
-    val maxDailyAds = 8
-    val cooldownMillis = 60_000L // 60-second cooldown to protect AdMob account integrity
+    val cooldownMillis = 0L // No cooldown limitation on rewarded ads
     val elapsed = currentTimeMillis - lastRewardedTime
     val remainingSeconds = (((cooldownMillis - elapsed) / 1000L).coerceAtLeast(0L)).toInt()
-    val remainingDailyAds = (maxDailyAds - if (adsWatchedDate == currentDateString) adsWatchedCount else 0).coerceAtLeast(0)
     
     val onAdWatchedSuccessfully = { rewardAmt: Int ->
         val newCount = if (adsWatchedDate == currentDateString) adsWatchedCount + 1 else 1
@@ -772,11 +839,19 @@ fun WordConnectGameApp(
     Box(
         modifier = modifier.fillMaxSize()
     ) {
-        // Dark green/jungled forest background gradient
+        // App background image with dark overlay for optimal legibility
+        Image(
+            painter = painterResource(id = R.drawable.wcbg),
+            contentDescription = "Background",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        // Subtle dark overlay to ensure readability of text and buttons
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(backgroundBrush)
+                .background(Color.Black.copy(alpha = 0.25f))
         )
 
         // Custom Confetti Particle overlay celebrating level clearance!
@@ -784,44 +859,44 @@ fun WordConnectGameApp(
 
         Scaffold(
             containerColor = Color.Transparent,
-            topBar = {
-                // --- TOP FIXED ADMOB BANNER AREA ---
-                var bannerAdViewRef by remember { mutableStateOf<AdView?>(null) }
-                DisposableEffect(Unit) {
-                    onDispose {
-                        bannerAdViewRef?.destroy()
+            bottomBar = {
+                Column {
+                    // --- ADMOB ADAPTIVE BANNER AREA (SAFE BOTTOM POSITIONING WITH CLEAR PADDING) ---
+                    var bannerAdViewRef by remember { mutableStateOf<AdView?>(null) }
+                    DisposableEffect(Unit) {
+                        onDispose {
+                            bannerAdViewRef?.destroy()
+                        }
                     }
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0D1714))
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .statusBarsPadding(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AndroidView(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("admob_banner"),
-                        factory = { ctx ->
-                            AdView(ctx).apply {
-                                setAdSize(AdSize.BANNER)
-                                adUnitId = "ca-app-pub-3940256099942544/6300978111" // Test Banner ID
-                                loadAd(AdRequest.Builder().build())
-                                bannerAdViewRef = this
+                            .background(Color(0xFF0D1714))
+                            .border(1.dp, Color(0xFF264038))
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AndroidView(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("admob_banner"),
+                            factory = { ctx ->
+                                AdView(ctx).apply {
+                                    setAdSize(AdSize.BANNER)
+                                    adUnitId = "ca-app-pub-3940256099942544/6300978111" // Test Banner ID
+                                    loadAd(AdRequest.Builder().build())
+                                    bannerAdViewRef = this
+                                }
                             }
-                        }
-                    )
-                }
-            },
-            bottomBar = {
-                NavigationBar(
-                    containerColor = Color(0xFF13221C).copy(alpha = 0.96f),
-                    tonalElevation = 8.dp,
-                    windowInsets = WindowInsets.navigationBars
-                ) {
+                        )
+                    }
+
+                    NavigationBar(
+                        containerColor = Color(0xFF13221C).copy(alpha = 0.96f),
+                        tonalElevation = 8.dp,
+                        windowInsets = WindowInsets.navigationBars
+                    ) {
                     AppTab.values().forEach { tab ->
                         val isSelected = selectedTab == tab
                         NavigationBarItem(
@@ -855,7 +930,8 @@ fun WordConnectGameApp(
                     }
                 }
             }
-        ) { innerPadding ->
+        }
+    ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -966,6 +1042,57 @@ fun WordConnectGameApp(
                 }
             }
 
+            // Daily Streak Chip
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .background(
+                            if (!isDailyRewardClaimedToday) Color(0xFFFFE082) else Color(0xFFFFF3E0).copy(alpha = 0.85f),
+                            RoundedCornerShape(16.dp)
+                        )
+                        .border(
+                            1.2.dp,
+                            if (!isDailyRewardClaimedToday) Color(0xFFFF9800) else Color(0xFFFFCC80),
+                            RoundedCornerShape(16.dp)
+                        )
+                        .clickable { showDailyStreakDialog = true }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "🔥 Daily Streak: $streakCount Days",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFFD84315)
+                        )
+                    )
+                    if (!isDailyRewardClaimedToday) {
+                        Text(
+                            text = "🎁 CLAIM BONUS",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFFBF360C)
+                            ),
+                            modifier = Modifier
+                                .background(Color(0xFFFFB300), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "✅",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+
             // Word Grid Gameboard area
             Box(
                 modifier = Modifier
@@ -995,9 +1122,9 @@ fun WordConnectGameApp(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             text = "FIND ALL WORDS",
@@ -1008,90 +1135,148 @@ fun WordConnectGameApp(
                             )
                         )
 
-                        // Target grid displaying word spaces
-                        val maxWordLength = currentLevel.targetWords.maxOfOrNull { it.length } ?: 4
-                        val displayInGrid = currentLevel.targetWords.size > 3 && maxWordLength < 5
-                        val targetWordsChunks = if (displayInGrid) {
-                            currentLevel.targetWords.chunked(2)
-                        } else {
-                            currentLevel.targetWords.chunked(1)
-                        }
+                        // Target grid displaying word spaces flexibly using FlowRow
+                        val wordGridScrollState = rememberScrollState()
+                        val isScrollable = wordGridScrollState.maxValue > 0
+                        val canScrollDown = wordGridScrollState.canScrollForward
 
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(if (displayInGrid) 6.dp else 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .verticalScroll(rememberScrollState())
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            targetWordsChunks.forEach { chunk ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    chunk.forEach { word ->
-                                        val isSolved = solvedWords.contains(word)
-                                        val hints = revealedIndicesByWord[word] ?: emptySet()
+                                    @OptIn(ExperimentalLayoutApi::class)
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .verticalScroll(wordGridScrollState)
+                                            .padding(horizontal = 4.dp)
+                                    ) {
+                                        currentLevel.targetWords.forEach { word ->
+                                            val isSolved = solvedWords.contains(word)
+                                            val hints = revealedIndicesByWord[word] ?: emptySet()
 
-                                         val cellWidth = when {
-                                             word.length >= 8 -> 22.dp
-                                             word.length >= 7 -> 25.dp
-                                             word.length >= 6 -> 28.dp
-                                             else -> if (displayInGrid) 25.dp else 30.dp
-                                         }
-                                         val cellHeight = when {
-                                             word.length >= 8 -> 26.dp
-                                             word.length >= 7 -> 28.dp
-                                             word.length >= 6 -> 32.dp
-                                             else -> if (displayInGrid) 28.dp else 34.dp
-                                         }
-                                         val fontSize = when {
-                                             word.length >= 8 -> 12.sp
-                                             word.length >= 7 -> 14.sp
-                                             word.length >= 6 -> 15.sp
-                                             else -> 16.sp
-                                         }
+                                            val cellWidth = when {
+                                                word.length >= 8 -> 21.dp
+                                                word.length >= 7 -> 23.dp
+                                                word.length >= 6 -> 25.dp
+                                                word.length >= 5 -> 27.dp
+                                                else -> 29.dp
+                                            }
+                                            val cellHeight = when {
+                                                word.length >= 8 -> 25.dp
+                                                word.length >= 7 -> 27.dp
+                                                word.length >= 6 -> 29.dp
+                                                word.length >= 5 -> 31.dp
+                                                else -> 33.dp
+                                            }
+                                            val fontSize = when {
+                                                word.length >= 8 -> 11.sp
+                                                word.length >= 7 -> 12.sp
+                                                word.length >= 6 -> 13.sp
+                                                word.length >= 5 -> 14.sp
+                                                else -> 15.sp
+                                            }
 
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                            modifier = Modifier.padding(vertical = 1.dp)
-                                        ) {
-                                            word.forEachIndexed { charIndex, char ->
-                                                val showChar = isSolved || hints.contains(charIndex)
-                                                val cellBg = when {
-                                                    isSolved -> Color(0xFFC8E6C9)       // Solved: Fresh light mint-green
-                                                    hints.contains(charIndex) -> Color(0xFFFFE082) // Hint: Warm shiny sun-yellow
-                                                    else -> Color(0xFFF0EBE1)            // Unsolved: Clean obvious soft sand-cream
-                                                }
-                                                val cellBorderColor = when {
-                                                    isSolved -> Color(0xFF4CAF50)
-                                                    hints.contains(charIndex) -> Color(0xFFFFB300)
-                                                    else -> Color(0xFFC7BCAE)
-                                                }
-                                                val cellTextColor = when {
-                                                    isSolved -> Color(0xFF1B5E20)
-                                                    hints.contains(charIndex) -> Color(0xFFE65100)
-                                                    else -> Color(0xFF5D4037)
-                                                }
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(width = cellWidth, height = cellHeight)
-                                                        .background(cellBg, RoundedCornerShape(6.dp))
-                                                        .border(1.2.dp, cellBorderColor, RoundedCornerShape(6.dp)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        text = if (showChar) char.toString() else "",
-                                                        style = MaterialTheme.typography.titleMedium.copy(
-                                                            fontWeight = FontWeight.ExtraBold,
-                                                            fontSize = fontSize,
-                                                            color = cellTextColor
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                word.forEachIndexed { charIndex, char ->
+                                                    val showChar = isSolved || hints.contains(charIndex)
+                                                    val cellBg = when {
+                                                        isSolved -> Color(0xFFC8E6C9)       // Solved: Fresh light mint-green
+                                                        hints.contains(charIndex) -> Color(0xFFFFE082) // Hint: Warm shiny sun-yellow
+                                                        else -> Color(0xFFF0EBE1)            // Unsolved: Clean obvious soft sand-cream
+                                                    }
+                                                    val cellBorderColor = when {
+                                                        isSolved -> Color(0xFF4CAF50)
+                                                        hints.contains(charIndex) -> Color(0xFFFFB300)
+                                                        else -> Color(0xFFC7BCAE)
+                                                    }
+                                                    val cellTextColor = when {
+                                                        isSolved -> Color(0xFF1B5E20)
+                                                        hints.contains(charIndex) -> Color(0xFFE65100)
+                                                        else -> Color(0xFF5D4037)
+                                                    }
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(width = cellWidth, height = cellHeight)
+                                                            .background(cellBg, RoundedCornerShape(6.dp))
+                                                            .border(1.2.dp, cellBorderColor, RoundedCornerShape(6.dp)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = if (showChar) char.toString() else "",
+                                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                fontSize = fontSize,
+                                                                color = cellTextColor
+                                                            )
                                                         )
-                                                    )
+                                                    }
                                                 }
                                             }
                                         }
                                     }
+
+                                    // Custom Visible Vertical Scrollbar
+                                    if (isScrollable) {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(start = 4.dp)
+                                                .width(6.dp)
+                                                .height(90.dp)
+                                                .background(Color(0xFFD7CCC8), RoundedCornerShape(3.dp))
+                                        ) {
+                                            val scrollPercent = if (wordGridScrollState.maxValue > 0) {
+                                                wordGridScrollState.value.toFloat() / wordGridScrollState.maxValue.toFloat()
+                                            } else 0f
+                                            val thumbOffset = (58.dp * scrollPercent)
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset(y = thumbOffset)
+                                                    .fillMaxWidth()
+                                                    .height(32.dp)
+                                                    .background(Color(0xFF8D6E63), RoundedCornerShape(3.dp))
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Visible Scroll Indicator Banner for hidden words
+                            if (isScrollable) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color(0xFFFFF3E0), RoundedCornerShape(12.dp))
+                                        .border(1.dp, Color(0xFFFFB300), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (canScrollDown) "📜 Scroll down for more words ↓" else "📜 Scroll up ↑",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFE65100),
+                                            fontSize = 11.sp
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -1142,8 +1327,8 @@ fun WordConnectGameApp(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Shuffle Button left
@@ -1185,7 +1370,7 @@ fun WordConnectGameApp(
                 BoxWithConstraints(
                     modifier = Modifier
                         .weight(1f, fill = false)
-                        .widthIn(max = 242.dp)
+                        .widthIn(min = 180.dp, max = 242.dp)
                         .aspectRatio(1f)
                         .clip(CircleShape)
                         .border(4.dp, Color(0xFF8D6E63), CircleShape)
@@ -1200,19 +1385,23 @@ fun WordConnectGameApp(
                     val widthPx = with(density) { maxWidth.toPx() }
                     val heightPx = with(density) { maxHeight.toPx() }
                     val center = Offset(widthPx / 2f, heightPx / 2f)
-                    val circleRadius = widthPx * 0.35f
-                    val touchThreshold = widthPx * 0.14f
-                    val letterSize = with(density) { (maxWidth * 0.20f).coerceIn(36.dp, 48.dp) }
+                    val circleRadius = widthPx * 0.32f
+                    val touchThreshold = widthPx * 0.16f
+                    val letterSize = with(density) { (maxWidth * 0.22f).coerceIn(34.dp, 48.dp) }
                     val halfSizePx = with(density) { (letterSize / 2).toPx() }
 
-                    // Calculate static coordinate targets for letters
-                    val positions = remember(shuffledLetters, widthPx) {
-                        shuffledLetters.indices.map { i ->
-                            val angle = (360f / shuffledLetters.size * i - 90f) * (Math.PI / 180f)
-                            Offset(
-                                x = center.x + circleRadius * cos(angle).toFloat(),
-                                y = center.y + circleRadius * sin(angle).toFloat()
-                            )
+                    // Calculate coordinate targets for letters safely on all screen sizes & OS versions
+                    val positions = remember(shuffledLetters, widthPx, heightPx) {
+                        if (widthPx > 0f && heightPx > 0f) {
+                            shuffledLetters.indices.map { i ->
+                                val angle = (360f / shuffledLetters.size * i - 90f) * (Math.PI / 180f)
+                                Offset(
+                                    x = center.x + circleRadius * cos(angle).toFloat(),
+                                    y = center.y + circleRadius * sin(angle).toFloat()
+                                )
+                            }
+                        } else {
+                            emptyList()
                         }
                     }
 
@@ -1308,7 +1497,7 @@ fun WordConnectGameApp(
 
                             Box(
                                 modifier = Modifier
-                                    .absoluteOffset { offsetDp }
+                                    .offset { offsetDp }
                                     .size(letterSize)
                                     .background(
                                         if (isSelected) Color(0xFFFF7043) else Color(0xFFFFF8F1),
@@ -1340,7 +1529,7 @@ fun WordConnectGameApp(
                     }
                 }
 
-                // Hint Button right (deducts 500 coins or offers rewarded video if out of coins)
+                // Hint Button right (deducts 500 coins and finds an uncompleted word)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
@@ -1352,34 +1541,27 @@ fun WordConnectGameApp(
                             
                             if (uncompleted.isNotEmpty()) {
                                 if (coins >= 500) {
-                                    // Gather all unfilled letters
-                                    val candidates = mutableListOf<Triple<String, Int, Char>>()
-                                    uncompleted.forEach { targetWord ->
-                                        val revealed = revealedIndicesByWord[targetWord] ?: emptySet()
-                                        targetWord.forEachIndexed { cIdx, char ->
-                                            if (!revealed.contains(cIdx)) {
-                                                candidates.add(Triple(targetWord, cIdx, char))
-                                            }
-                                        }
-                                    }
+                                    val foundWord = uncompleted.random()
+                                    coins -= 500
+                                    solvedWords.add(foundWord)
+                                    solvedWordsString = solvedWords.joinToString(";")
+                                    
+                                    saveGameState(currentLevelIndex, coins, solvedWords)
+                                    playSound(true)
+                                    triggerHaptic()
+                                    showToast("💡 Word found: $foundWord!")
 
-                                    if (candidates.isNotEmpty()) {
-                                        val luckyPick = candidates.random()
-                                        val targetWord = luckyPick.first
-                                        val charIndex = luckyPick.second
-
-                                        coins -= 500
-                                        val currentSet = revealedIndicesByWord[targetWord] ?: emptySet()
-                                        revealedIndicesByWord[targetWord] = currentSet + charIndex
-                                        
+                                    if (solvedWords.size == currentLevel.targetWords.size) {
+                                        coins += 50 // Level clear bonus
                                         saveGameState(currentLevelIndex, coins, solvedWords)
-                                        triggerHaptic()
-                                        showToast("Hints purchased! 🎁 Letter revealed!")
+                                        showLevelComplete = true
                                     }
                                 } else {
-                                    // Let user know they can only earn coins under the Free Coins tab
-                                    showToast("Not enough coins! Buy hints for 500 coins, or get more under 'Free Coins'!")
+                                    // Let user know they can earn free coins under the Free Coins tab
+                                    showToast("Not enough coins! Buy word hints for 500 coins, or get more under 'Free Coins'!")
                                 }
+                            } else {
+                                showToast("All words in this level are already found!")
                             }
                         },
                         containerColor = Color(0xFFFFFDE7),
@@ -1392,7 +1574,7 @@ fun WordConnectGameApp(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Buy Hint",
+                            contentDescription = "Buy Word Hint",
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -1461,8 +1643,8 @@ fun WordConnectGameApp(
             val instructions = listOf(
                 "1. Connecting Letters" to "Drag your finger across circular letter pads to connect them, tracing out valid english words corresponding to the level targets.",
                 "2. Level Completed Trigger" to "Forming all valid words in a level successfully triggers a clear bonus. Leaving the app won't trap you since level progression state remains securely stored.",
-                "3. Charging Hints" to "Purchasing a random character hint in any uncompleted target word costs exactly 500 coins.",
-                "4. Recharging Coin Supply" to "Got zero coins left? Navigate to the 'Free Coins' tab and watch highly rewarding video ads anytime for +500 free coins instantly!"
+                "3. Word Hints" to "Spending 500 coins on hints instantly grants and reveals a full target word in the puzzle!",
+                "4. Recharging Coin Supply" to "Need coins? Visit the 'Free Coins' tab and watch rewarded video ads anytime with no daily limits for +500 free coins each!"
             )
             
             instructions.forEach { (title, content) ->
@@ -1541,37 +1723,29 @@ fun WordConnectGameApp(
                         modifier = Modifier.padding(horizontal = 8.dp)
                     )
 
-                    val isDailyLimitReached = remainingDailyAds <= 0
                     val isCooldownActive = remainingSeconds > 0
 
                     Text(
-                        text = "Daily Limit: $remainingDailyAds of $maxDailyAds videos remaining today",
+                        text = "✨ Unlimited Rewarded Ads! Watch anytime for +500 Coins",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = if (isDailyLimitReached) Color.Red else Color(0xFF7D5742),
+                            color = Color(0xFF2E7D32),
                             fontWeight = FontWeight.Bold
                         )
                     )
 
                     Button(
                         onClick = {
-                            if (isCooldownActive) {
-                                showToast("⏳ Cooldown active. Please wait ${remainingSeconds}s.")
-                            } else if (isDailyLimitReached) {
-                                showToast("🚨 Daily limit reached. Try again tomorrow!")
-                            } else {
-                                activity.showRewarded(
-                                    onAwardReward = { amt ->
-                                        coins += 500
-                                        onAdWatchedSuccessfully(amt)
-                                        saveGameState(currentLevelIndex, coins, solvedWords)
-                                        showToast("🎁 Congratulations! +500 Coins added to your journey!")
-                                    }
-                                )
-                            }
+                            activity.showRewarded(
+                                onAwardReward = { amt ->
+                                    coins += 500
+                                    onAdWatchedSuccessfully(amt)
+                                    saveGameState(currentLevelIndex, coins, solvedWords)
+                                    showToast("🎁 Congratulations! +500 Coins added to your journey!")
+                                }
+                            )
                         },
-                        enabled = !isCooldownActive && !isDailyLimitReached,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isCooldownActive || isDailyLimitReached) Color.Gray else Color(0xFFFF9800)
+                            containerColor = Color(0xFFFF9800)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1584,16 +1758,12 @@ fun WordConnectGameApp(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = if (isCooldownActive) Icons.Default.Refresh else Icons.Default.PlayArrow,
+                                imageVector = Icons.Default.PlayArrow,
                                 contentDescription = "Watch Icon",
                                 tint = Color.White
                             )
                             Text(
-                                text = when {
-                                    isDailyLimitReached -> "DAILY LIMIT REACHED"
-                                    isCooldownActive -> "NEXT VIDEO IN ${remainingSeconds}S"
-                                    else -> "WATCH VIDEO (+500 COINS)"
-                                },
+                                text = "WATCH VIDEO (+500 COINS)",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color.White)
                             )
                         }
@@ -1837,34 +2007,125 @@ if (showAddProfileDialog) {
 
         // --- LEVEL COMPLETE CELEBRATION OVERLAY DIALOG ---
         if (showLevelComplete) {
+            val shareContext = LocalContext.current
             AlertDialog(
                 onDismissRequest = {},
                 confirmButton = {
-                    Button(
-                        onClick = {
-                            val nextLevelAction = {
-                                showLevelComplete = false
-                                currentLevelIndex = currentLevelIndex + 1
-                                solvedWordsString = ""
-                                revealedIndicesByWord.clear()
-                                saveGameState(currentLevelIndex, coins, emptyList())
-                            }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val activity = (shareContext as? Activity)
+                                    val rootView = activity?.window?.decorView?.rootView
+                                    if (rootView != null && rootView.width > 0 && rootView.height > 0) {
+                                        val bitmap = Bitmap.createBitmap(rootView.width, rootView.height, Bitmap.Config.ARGB_8888)
+                                        val canvas = Canvas(bitmap)
+                                        rootView.draw(canvas)
 
-                            val completedLevel = currentLevelIndex + 1
-                            if (completedLevel % 3 == 0) {
-                                // Show interstitial transition ad on every 3 level intervals (e.g. Lvl 3, 6, 9...)
-                                activity.showInterstitial {
+                                        val imagesDir = File(shareContext.cacheDir, "images")
+                                        if (!imagesDir.exists()) {
+                                            imagesDir.mkdirs()
+                                        }
+                                        val imageFile = File(imagesDir, "level_complete_share.png")
+                                        val outputStream = FileOutputStream(imageFile)
+                                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                                        outputStream.flush()
+                                        outputStream.close()
+
+                                        val contentUri: Uri = FileProvider.getUriForFile(
+                                            shareContext,
+                                            "${shareContext.packageName}.fileprovider",
+                                            imageFile
+                                        )
+
+                                        val shareText = "🎮 I just cleared Level ${currentLevelIndex + 1} (${currentLevel.name}) in Word Connect Stories!\n" +
+                                                "🏆 Rank: ${getPlayerRankBadge(currentLevelIndex + 1).title}\n" +
+                                                "🔥 Daily Streak: $streakCount Days!\n" +
+                                                "Can you beat my vocabulary score? Download & play now! 🔤✨"
+
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "image/png"
+                                            putExtra(Intent.EXTRA_SUBJECT, "Word Connect Stories - Level Complete!")
+                                            putExtra(Intent.EXTRA_TEXT, shareText)
+                                            putExtra(Intent.EXTRA_STREAM, contentUri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        shareContext.startActivity(Intent.createChooser(shareIntent, "Share victory screenshot via"))
+                                    } else {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, "Word Connect Stories - Level Complete!")
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                "🎮 I just cleared Level ${currentLevelIndex + 1} (${currentLevel.name}) in Word Connect Stories!\n" +
+                                                "🏆 Rank: ${getPlayerRankBadge(currentLevelIndex + 1).title}\n" +
+                                                "🔥 Daily Streak: $streakCount Days!\n" +
+                                                "Can you beat my vocabulary score? Download & play now! 🔤✨"
+                                            )
+                                        }
+                                        shareContext.startActivity(Intent.createChooser(shareIntent, "Share victory via"))
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, "Word Connect Stories - Level Complete!")
+                                        putExtra(
+                                            Intent.EXTRA_TEXT,
+                                            "🎮 I just cleared Level ${currentLevelIndex + 1} (${currentLevel.name}) in Word Connect Stories!\n" +
+                                            "🏆 Rank: ${getPlayerRankBadge(currentLevelIndex + 1).title}\n" +
+                                            "🔥 Daily Streak: $streakCount Days!\n" +
+                                            "Can you beat my vocabulary score? Download & play now! 🔤✨"
+                                        )
+                                    }
+                                    shareContext.startActivity(Intent.createChooser(shareIntent, "Share victory via"))
+                                }
+                            },
+                            border = BorderStroke(1.5.dp, Color(0xFF2E7D32)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E7D32)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share Progress",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Share", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                val nextLevelAction = {
+                                    showLevelComplete = false
+                                    currentLevelIndex = currentLevelIndex + 1
+                                    solvedWordsString = ""
+                                    revealedIndicesByWord.clear()
+                                    saveGameState(currentLevelIndex, coins, emptyList())
+                                }
+
+                                val completedLevel = currentLevelIndex + 1
+                                if (completedLevel % 3 == 0) {
+                                    // Show interstitial transition ad on every 3 level intervals (e.g. Lvl 3, 6, 9...)
+                                    activity.showInterstitial {
+                                        nextLevelAction()
+                                    }
+                                } else {
+                                    // Transition directly without showing an interstitial ad
                                     nextLevelAction()
                                 }
-                            } else {
-                                // Transition directly without showing an interstitial ad
-                                nextLevelAction()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)), // Obvious bright friendly green
-                        modifier = Modifier.testTag("btn_complete_dialog_next")
-                    ) {
-                        Text("Next Level ➔", color = Color.White, fontWeight = FontWeight.Bold)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)), // Obvious bright friendly green
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .testTag("btn_complete_dialog_next")
+                        ) {
+                            Text("Next Level ➔", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 },
                 title = {
@@ -2014,6 +2275,146 @@ if (showAddProfileDialog) {
                 },
                 shape = RoundedCornerShape(24.dp),
                 containerColor = Color(0xFFFFFDF9) // Pristine light elegant dialog canvas
+            )
+        }
+
+        // --- DAILY STREAK CALENDAR MODAL DIALOG ---
+        if (showDailyStreakDialog) {
+            AlertDialog(
+                onDismissRequest = { showDailyStreakDialog = false },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (!isDailyRewardClaimedToday) {
+                                claimDailyReward()
+                            }
+                            showDailyStreakDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDailyRewardClaimedToday) Color(0xFF757575) else Color(0xFFFF9800)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("btn_claim_daily_streak")
+                    ) {
+                        Text(
+                            text = if (isDailyRewardClaimedToday) "Claimed Today ✅" else "🎁 Claim Today's Bonus!",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDailyStreakDialog = false }) {
+                        Text("Close", color = Color(0xFF795548))
+                    }
+                },
+                title = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🔥 DAILY STREAK CALENDAR", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black, color = Color(0xFFD84315)))
+                        Text("Log in daily to earn bigger gold coin rewards!", style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF5D4037)))
+                    }
+                },
+                text = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Streak Banner Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                            border = BorderStroke(1.5.dp, Color(0xFFFFB300)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text("🔥", style = MaterialTheme.typography.headlineMedium)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        "$streakCount Day Streak!",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black, color = Color(0xFFE65100))
+                                    )
+                                    Text(
+                                        if (isDailyRewardClaimedToday) "Come back tomorrow for Day ${((streakCount) % 7) + 1}!" else "Claim your daily bonus now!",
+                                        style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF6D4C41))
+                                    )
+                                }
+                            }
+                        }
+
+                        // 7-Day Rewards Grid
+                        Text(
+                            "7-DAY LOGIN REWARDS",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = Color(0xFF8D6E63)),
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+
+                        val currentCycleDay = ((streakCount - 1) % 7) + 1
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            (1..7).forEach { dayNum ->
+                                val dayRewards = listOf(100, 150, 200, 250, 300, 400, 1000)
+                                val rewardVal = dayRewards[dayNum - 1]
+                                val isCurrentDay = (dayNum == currentCycleDay)
+                                val isPastDay = (dayNum < currentCycleDay) || (isCurrentDay && isDailyRewardClaimedToday)
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            when {
+                                                isCurrentDay && !isDailyRewardClaimedToday -> Color(0xFFFFF176)
+                                                isPastDay -> Color(0xFFC8E6C9)
+                                                else -> Color(0xFFF5F5F5)
+                                            }
+                                        )
+                                        .border(
+                                            width = if (isCurrentDay) 1.5.dp else 1.dp,
+                                            color = if (isCurrentDay) Color(0xFFFFB300) else Color(0xFFE0E0E0),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .padding(vertical = 8.dp, horizontal = 2.dp)
+                                ) {
+                                    Text(
+                                        "D$dayNum",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isCurrentDay) Color(0xFFE65100) else Color(0xFF616161)
+                                        )
+                                    )
+                                    Text(
+                                        if (dayNum == 7) "🎁" else "🪙",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        "+$rewardVal",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = if (isPastDay) Color(0xFF2E7D32) else Color(0xFF333333)
+                                        )
+                                    )
+                                    if (isPastDay) {
+                                        Text("✓", style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                containerColor = Color(0xFFFFFDF9),
+                shape = RoundedCornerShape(24.dp)
             )
         }
 
@@ -2172,8 +2573,8 @@ if (showAddProfileDialog) {
                         Text("1. Drag your finger across the circular letters to connect them and form words.", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
                         Text("2. Release your finger to submit the spelling.", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
                         Text("3. Correct guesses will reveal letters on the board.", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
-                        Text("4. Need help? Tap the ⭐ Star to buy a hint for 500 coins!", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
-                        Text("5. Short on coins? Watch rewarded videos anytime under the 'Free Coins' tab to get +500 free coins!", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
+                        Text("4. Need help? Tap the ⭐ Star to spend 500 coins and instantly find a word!", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
+                        Text("5. Short on coins? Watch rewarded videos anytime under the 'Free Coins' tab with no daily limits for +500 free coins!", color = Color(0xFF5D4037), fontWeight = FontWeight.Medium)
                     }
                 },
                 shape = RoundedCornerShape(24.dp),
