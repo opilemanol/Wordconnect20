@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.wordconnect" // Replace with your actual package name
+    namespace = "com.example" // Replace with your actual package name
     compileSdk = 34
 
     signingConfigs {
