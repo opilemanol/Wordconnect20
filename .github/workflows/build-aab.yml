@@ -1,4 +1,3 @@
-
 name: Build Signed Release AAB
 
 on:
@@ -12,9 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      STORE_PASSWORD: android123
-      KEY_PASSWORD: android123
-      KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+      STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      # CHANGE THIS: Change 'my-upload-keybeesharp.jks' to your new app's key name
+      KEYSTORE_PATH: ${{ github.workspace }}/my-upload-keywc.jks
 
     steps:
       - name: Checkout source
@@ -31,30 +31,37 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
 
-      - name: Create release keystore
+      # Automatically generates a brand-new, unique keystore file in the cloud if it doesn't exist!
+      - name: Generate Fresh Keystore File
         run: |
-          keytool -genkeypair -v \
-            -keystore "$KEYSTORE_PATH" \
-            -storepass "$STORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            -alias upload \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Teramayotech, OU=TeramayoTech, O=TeramayoTech, L=Ibadan, S=Oyo, C=NG"
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_PATH" \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$STORE_PASSWORD" \
+              -keypass "$KEY_PASSWORD" \
+              -dname "CN=Teramayo, O=AppDevelopment, C=NG"
+          fi
 
       - name: Build Signed Release AAB
-        run: gradle bundleRelease --stacktrace
+        run: gradle bundleRelease -Djava.security.properties=/dev/null --stacktrace
 
-      - name: Upload AAB
+      - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release-aab
           path: app/build/outputs/bundle/release/app-release.aab
 
-      - name: Upload Keystore Backup
+      # Safe backup so you can download your brand-new unique keystore directly from GitHub!
+      - name: Upload Generated Keystore Backup
         uses: actions/upload-artifact@v4
         with:
           name: save-this-keystore
-          path: my-upload-key.jks
+          # CHANGE THIS: Match your key file name here too
+          path: my-upload-keywc.jks
