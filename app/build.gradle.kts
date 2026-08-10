@@ -1,9 +1,16 @@
-signingConfigs {
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+}
+
+android {
+    namespace = "com.example.wordconnect" // Replace with your actual package name
+    compileSdk = 34
+
+    signingConfigs {
         create("release") {
-            // CHANGE THIS: Change 'my-upload-keybeesharp.jks' to match your new filename
             val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-keywc.jks"
             storeFile = file(keystorePath)
-            
             storePassword = System.getenv("STORE_PASSWORD") ?: project.findProperty("STORE_PASSWORD")?.toString()
             keyAlias = "upload"
             keyPassword = System.getenv("KEY_PASSWORD") ?: project.findProperty("KEY_PASSWORD")?.toString()
@@ -24,3 +31,4 @@ signingConfigs {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+}
