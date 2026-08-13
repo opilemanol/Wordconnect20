@@ -1558,7 +1558,8 @@ fun WordConnectGameApp(
                                     }
                                 } else {
                                     // Let user know they can earn free coins under the Free Coins tab
-                                    showToast("Not enough coins! Buy word hints for 500 coins, or get more under 'Free Coins'!")
+                                    showToast("Not enough coins! Directing to Free Coins...")
+                                    selectedTab = AppTab.FREE_COINS
                                 }
                             } else {
                                 showToast("All words in this level are already found!")
@@ -1741,6 +1742,7 @@ fun WordConnectGameApp(
                                     onAdWatchedSuccessfully(amt)
                                     saveGameState(currentLevelIndex, coins, solvedWords)
                                     showToast("🎁 Congratulations! +500 Coins added to your journey!")
+                                    selectedTab = AppTab.GAME
                                 }
                             )
                         },
