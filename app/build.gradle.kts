@@ -4,11 +4,12 @@ plugins {
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.roborazzi)
     alias(libs.plugins.secrets)
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.example"
-    compileSdk { version = release(36) { minorApiLevel = 1 } }
+    namespace = "com.aistudio.wordconnectgame.qwpzre"
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.aistudio.wordconnectgame.qwpzre"
@@ -18,6 +19,9 @@ android {
         versionName = "3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Prevents AdMob startup crashes if manifest meta-data is evaluated via build config
+        manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
     }
 
     signingConfigs {
@@ -47,14 +51,21 @@ android {
             signingConfig = signingConfigs.getByName("debugConfig")
         }
     }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
     }
+
     testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
@@ -87,6 +98,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.play.services.ads)
     implementation(libs.retrofit)
+
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)
@@ -96,13 +108,16 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
+
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.runner)
+
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
     "ksp"(libs.androidx.room.compiler)
     "ksp"(libs.moshi.kotlin.codegen)
 }
