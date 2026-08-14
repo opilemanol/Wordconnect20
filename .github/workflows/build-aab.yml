@@ -33,7 +33,6 @@ jobs:
         with:
           validate-wrappers: false
 
-      # Decodes your saved Version 1 keystore from GitHub Secrets
       - name: Decode Saved Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_PATH"
