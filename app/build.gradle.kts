@@ -4,11 +4,10 @@ plugins {
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.roborazzi)
     alias(libs.plugins.secrets)
-    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.aistudio.wordconnectgame.qwpzre"
+    namespace = "com.example"
     compileSdk = 36
 
     defaultConfig {
@@ -26,11 +25,19 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-keywc.jks"
+            val keystorePath = System.getenv("KEYSTORE_PATH") 
+                ?: project.findProperty("KEYSTORE_PATH")?.toString() 
+                ?: "${rootDir}/my-upload-keywc.jks"
             storeFile = file(keystorePath)
-            storePassword = System.getenv("STORE_PASSWORD") ?: project.findProperty("STORE_PASSWORD")?.toString()
-            keyAlias = "upload"
-            keyPassword = System.getenv("KEY_PASSWORD") ?: project.findProperty("KEY_PASSWORD")?.toString()
+            storePassword = System.getenv("STORE_PASSWORD") 
+                ?: project.findProperty("STORE_PASSWORD")?.toString() 
+                ?: "android123"
+            keyAlias = System.getenv("KEY_ALIAS") 
+                ?: project.findProperty("KEY_ALIAS")?.toString() 
+                ?: "upload"
+            keyPassword = System.getenv("KEY_PASSWORD") 
+                ?: project.findProperty("KEY_PASSWORD")?.toString() 
+                ?: "android123"
         }
         create("debugConfig") {
             storeFile = file("${rootDir}/debug.keystore")
@@ -45,7 +52,12 @@ android {
             isCrunchPngs = false
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            val keystoreFile = signingConfigs.getByName("release").storeFile
+            if (keystoreFile != null && keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debugConfig")
+            }
         }
         debug {
             signingConfig = signingConfigs.getByName("debugConfig")
@@ -55,10 +67,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -108,19 +116,6 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
-
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.runner)
-
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-
-    "ksp"(libs.androidx.room.compiler)
-    "ksp"(libs.moshi.kotlin.codegen)
-}
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
