@@ -709,11 +709,12 @@ fun WordConnectGameApp(
     val currentLevel = remember(currentLevelIndex, activeProfileId) {
         val puzzlePool = PuzzleData.puzzlePool
         val levelNames = PuzzleData.levelNames
-        val combinedHash = (currentLevelIndex + activeProfileId.hashCode())
-        val nonNegHash = if (combinedHash < 0) -combinedHash else combinedHash
+        val combinedHash = (currentLevelIndex.toLong() + activeProfileId.hashCode().toLong())
+        val poolIndex = (Math.abs(combinedHash) % puzzlePool.size).toInt()
+        val nameIndex = (Math.abs(combinedHash) % levelNames.size).toInt()
         
-        val chosenPuzzle = puzzlePool[nonNegHash % puzzlePool.size]
-        val chosenName = "${levelNames[nonNegHash % levelNames.size]} ${currentLevelIndex + 1}"
+        val chosenPuzzle = puzzlePool[poolIndex]
+        val chosenName = "${levelNames[nameIndex]} ${currentLevelIndex + 1}"
         
         WordLevel(
             levelNumber = currentLevelIndex + 1,
