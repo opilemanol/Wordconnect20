@@ -2,9 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+    <!-- Silence AppOps attribution warning for blank or default tag -->
+    <attribution android:tag=" " android:label="@string/app_name" tools:ignore="ManifestValidation" />
+    <attribution android:tag="null" android:label="@string/app_name" />
+    <attribution android:tag="attributionTag" android:label="@string/app_name" />
+    <attribution android:tag="google_ads_sdk" android:label="@string/app_name" />
 
     <application
         android:allowBackup="true"
@@ -17,7 +19,7 @@
         android:theme="@style/Theme.MyApplication">
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" />
+            android:value="@string/admob_app_id" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

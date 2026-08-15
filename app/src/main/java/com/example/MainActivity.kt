@@ -94,18 +94,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Safely initialize AdMob Mobile Ads SDK on the Main thread with exception handling
-        try {
-            MobileAds.initialize(this) {
-                try {
-                    loadInterstitialAd()
-                    loadRewardedAd()
-                } catch (e: Throwable) {
-                    // Ignore ads load exception
+        // Safely initialize AdMob Mobile Ads SDK in a background thread with exception handling
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    MobileAds.initialize(this@MainActivity) {}
                 }
+                loadInterstitialAd()
+                loadRewardedAd()
+            } catch (e: Throwable) {
+                // Ignore any Play Services or other runtime exceptions to guarantee smooth offline play
             }
-        } catch (e: Throwable) {
-            // Ignore any Play Services or other runtime exceptions to guarantee smooth offline play
         }
 
         enableEdgeToEdge()
@@ -163,62 +162,49 @@ class MainActivity : ComponentActivity() {
 
     // Displays interstitial ad between levels with clean callback execution
     fun showInterstitial(onAdClosed: () -> Unit) {
-        try {
-            val ad = interstitialAd
-            if (ad != null) {
-                ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                    override fun onAdDismissedFullScreenContent() {
-                        interstitialAd = null
-                        loadInterstitialAd() // pre-load next
-                        onAdClosed()
-                    }
-                    override fun onAdFailedToShowFullScreenContent(error: AdError) {
-                        interstitialAd = null
-                        loadInterstitialAd()
-                        onAdClosed()
-                    }
+        val ad = interstitialAd
+        if (ad != null) {
+            ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    interstitialAd = null
+                    loadInterstitialAd() // pre-load next
+                    onAdClosed()
                 }
-                ad.show(this)
-            } else {
-                loadInterstitialAd()
-                onAdClosed() // move forward if ad isn't ready
+                override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                    interstitialAd = null
+                    loadInterstitialAd()
+                    onAdClosed()
+                }
             }
-        } catch (e: Throwable) {
-            onAdClosed()
+            ad.show(this)
+        } else {
+            loadInterstitialAd()
+            onAdClosed() // move forward if ad isn't ready
         }
     }
 
     // Displays rewarded video ad to earn hints/coins
     fun showRewarded(onAwardReward: (Int) -> Unit, onAdClosed: () -> Unit = {}) {
-        try {
-            val ad = rewardedAd
-            if (ad != null) {
-                ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                    override fun onAdDismissedFullScreenContent() {
-                        rewardedAd = null
-                        loadRewardedAd() // pre-load next
-                        onAdClosed()
-                    }
-                    override fun onAdFailedToShowFullScreenContent(error: AdError) {
-                        rewardedAd = null
-                        loadRewardedAd()
-                        onAdClosed()
-                    }
+        val ad = rewardedAd
+        if (ad != null) {
+            ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    rewardedAd = null
+                    loadRewardedAd() // pre-load next
+                    onAdClosed()
                 }
-                ad.show(this) { rewardItem ->
-                    try {
-                        onAwardReward(rewardItem.amount)
-                    } catch (e: Throwable) {}
+                override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                    rewardedAd = null
+                    loadRewardedAd()
+                    onAdClosed()
                 }
-            } else {
-                loadRewardedAd()
-                try {
-                    Toast.makeText(this, "Ad is still loading... Please try again!", Toast.LENGTH_SHORT).show()
-                } catch (e: Throwable) {}
-                onAdClosed()
             }
-        } catch (e: Throwable) {
-            onAdClosed()
+            ad.show(this) { rewardItem ->
+                onAwardReward(rewardItem.amount)
+            }
+        } else {
+            loadRewardedAd()
+            Toast.makeText(this, "Ad is still loading... Please try again!", Toast.LENGTH_SHORT).show()
         }
     }
 }
@@ -492,19 +478,11 @@ fun ConfettiOverlay(visible: Boolean) {
 }
 
 // Bottom Tab Navigation Items enum
-enum class AppTab(val title: String) {
-    GAME("Play"),
-    HOW_TO_PLAY("Rules"),
-    FREE_COINS("Free Coins"),
-    SETTINGS("Settings");
-
-    val icon: androidx.compose.ui.graphics.vector.ImageVector
-        get() = when (this) {
-            GAME -> Icons.Default.PlayArrow
-            HOW_TO_PLAY -> Icons.Default.Info
-            FREE_COINS -> Icons.Default.Star
-            SETTINGS -> Icons.Default.Settings
-        }
+enum class AppTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    GAME("Play", Icons.Default.PlayArrow),
+    HOW_TO_PLAY("Rules", Icons.Default.Info),
+    FREE_COINS("Free Coins", Icons.Default.Star),
+    SETTINGS("Settings", Icons.Default.Settings)
 }
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -731,12 +709,11 @@ fun WordConnectGameApp(
     val currentLevel = remember(currentLevelIndex, activeProfileId) {
         val puzzlePool = PuzzleData.puzzlePool
         val levelNames = PuzzleData.levelNames
-        val combinedHash = (currentLevelIndex.toLong() + activeProfileId.hashCode().toLong())
-        val poolIndex = (Math.abs(combinedHash) % puzzlePool.size).toInt()
-        val nameIndex = (Math.abs(combinedHash) % levelNames.size).toInt()
+        val combinedHash = (currentLevelIndex + activeProfileId.hashCode())
+        val nonNegHash = if (combinedHash < 0) -combinedHash else combinedHash
         
-        val chosenPuzzle = puzzlePool[poolIndex]
-        val chosenName = "${levelNames[nameIndex]} ${currentLevelIndex + 1}"
+        val chosenPuzzle = puzzlePool[nonNegHash % puzzlePool.size]
+        val chosenName = "${levelNames[nonNegHash % levelNames.size]} ${currentLevelIndex + 1}"
         
         WordLevel(
             levelNumber = currentLevelIndex + 1,
@@ -888,9 +865,7 @@ fun WordConnectGameApp(
                     var bannerAdViewRef by remember { mutableStateOf<AdView?>(null) }
                     DisposableEffect(Unit) {
                         onDispose {
-                            try {
-                                bannerAdViewRef?.destroy()
-                            } catch (e: Throwable) {}
+                            bannerAdViewRef?.destroy()
                         }
                     }
                     Box(
@@ -907,16 +882,11 @@ fun WordConnectGameApp(
                                 .height(50.dp)
                                 .testTag("admob_banner"),
                             factory = { ctx ->
-                                try {
-                                    AdView(ctx).apply {
-                                        setAdSize(AdSize.BANNER)
-                                        adUnitId = "ca-app-pub-3940256099942544/6300978111" // Test Banner ID
-                                        loadAd(AdRequest.Builder().build())
-                                        bannerAdViewRef = this
-                                    }
-                                } catch (e: Throwable) {
-                                    // Provide safe fallback View if AdView fails in emulator or offline environment
-                                    android.view.View(ctx)
+                                AdView(ctx).apply {
+                                    setAdSize(AdSize.BANNER)
+                                    adUnitId = "ca-app-pub-3940256099942544/6300978111" // Test Banner ID
+                                    loadAd(AdRequest.Builder().build())
+                                    bannerAdViewRef = this
                                 }
                             }
                         )
@@ -1588,8 +1558,7 @@ fun WordConnectGameApp(
                                     }
                                 } else {
                                     // Let user know they can earn free coins under the Free Coins tab
-                                    showToast("Not enough coins! Directing to Free Coins...")
-                                    selectedTab = AppTab.FREE_COINS
+                                    showToast("Not enough coins! Buy word hints for 500 coins, or get more under 'Free Coins'!")
                                 }
                             } else {
                                 showToast("All words in this level are already found!")
@@ -1772,7 +1741,6 @@ fun WordConnectGameApp(
                                     onAdWatchedSuccessfully(amt)
                                     saveGameState(currentLevelIndex, coins, solvedWords)
                                     showToast("🎁 Congratulations! +500 Coins added to your journey!")
-                                    selectedTab = AppTab.GAME
                                 }
                             )
                         },
