@@ -14,19 +14,34 @@ android {
     applicationId = "com.aistudio.wordconnectgame.qwpzre"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 5
+    versionName = "5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val candidateKeystores = listOf(
+        System.getenv("KEYSTORE_PATH"),
+        "${rootDir}/my-upload-leywc.jks",
+        "${rootDir}/my-upload-keywc.jks",
+        "${rootDir}/my-upload-key.jks",
+      )
+      val keystoreFile = candidateKeystores
+        .filterNotNull()
+        .map(::file)
+        .firstOrNull { it.exists() }
+
+      if (keystoreFile != null) {
+        storeFile = keystoreFile
+      } else {
+        storeFile = file("${rootDir}/my-upload-keywc.jks")
+      }
+
+      storePassword = System.getenv("STORE_PASSWORD") ?: ""
+      keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: ""
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")

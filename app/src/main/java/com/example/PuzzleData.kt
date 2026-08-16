@@ -2,7 +2,7 @@ package com.example
 
 object PuzzleData {
     val puzzlePool = listOf(
-        Pair("DROW", listOf("WORD", "ROW", "ROD")),
+         Pair("DROW", listOf("WORD", "ROW", "ROD")),
         Pair("ACTS", listOf("CATS", "CAT", "SAT", "ACT")),
         Pair("PLAY", listOf("PLAY", "LAY", "PAY", "LAP")),
         Pair("ARTS", listOf("STAR", "ART", "RAT", "SAT", "TAR")),

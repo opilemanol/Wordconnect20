@@ -11,9 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      STORE_PASSWORD: android123
-      KEY_PASSWORD: android123
       KEYSTORE_PATH: ${{ github.workspace }}/my-upload-keywc.jks
+      LEGACY_KEYSTORE_PATH: ${{ github.workspace }}/my-upload-leywc.jks
+      KEY_ALIAS: upload
+      STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
     steps:
       - name: Checkout source
@@ -33,17 +35,25 @@ jobs:
         with:
           validate-wrappers: false
 
-      - name: Create release keystore
+      - name: Verify release keystore
+        shell: bash
         run: |
-          keytool -genkeypair -v \
-            -keystore "$KEYSTORE_PATH" \
-            -storepass "$STORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            -alias upload \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Teramayo, O=AppDevelopment, C=NG"
+          if [ -f "$KEYSTORE_PATH" ]; then
+            echo "Using keystore: $KEYSTORE_PATH"
+          elif [ -f "$LEGACY_KEYSTORE_PATH" ]; then
+            export KEYSTORE_PATH="$LEGACY_KEYSTORE_PATH"
+            echo "Using legacy keystore: $KEYSTORE_PATH"
+          else
+            echo "Keystore not found at $KEYSTORE_PATH or $LEGACY_KEYSTORE_PATH" >&2
+            exit 1
+          fi
+
+          if [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "STORE_PASSWORD and KEY_PASSWORD must be set as GitHub repository secrets." >&2
+            exit 1
+          fi
+
+          ls -l "$KEYSTORE_PATH"
 
       - name: Build Signed Release AAB
         run: gradle bundleRelease --stacktrace
@@ -58,4 +68,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: save-this-keystore
-          path: my-upload-keywc.jks
+          path: ${{ env.KEYSTORE_PATH }}
