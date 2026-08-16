@@ -65,16 +65,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
     }
 
     testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+// Configures Kotlin JVM target for AGP 9+ / Kotlin 2.0+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 secrets {
