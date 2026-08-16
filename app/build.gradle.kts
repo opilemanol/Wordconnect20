@@ -23,7 +23,7 @@ android {
   signingConfigs {
     create("release") {
         // Look for the environment variable, default to local root directory if empty
-        val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-keybeesharp.jks"
+        val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-keywc.jks"
         storeFile = file(keystorePath)
         
         // This handles both GitHub environment variables and local properties gracefully
